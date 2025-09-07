@@ -2,7 +2,12 @@
 # Watt Wise: Electricity Bill Analyzer
 
 Watt Wise is a web application built with Streamlit that transforms your Noida Power Company Limited (NPCL) electricity bill PDFs into an interactive, visual dashboard. It automates the entire process of collecting, parsing, and analyzing your electricity bills, providing clear insights into your usage and spending patterns.
-
+<p align="center">
+  <img src="./downloads/Home.png" alt="Watt Wise Home Preview" width="700">
+</p>
+<p align="center">
+  <img src="./downloads/Dashboard.png" alt="Watt Wise Dashboard Preview" width="700">
+</p>
 How It Works
 The application follows a simple, three-step user journey:
 
