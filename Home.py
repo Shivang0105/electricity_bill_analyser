@@ -63,7 +63,6 @@ def extract_bill_details(pdf_path):
     text = text.replace("\xa0", " ")
     text = re.sub(r"[ \t]+", " ", text)
 
-    # ---------------- Identifiers (strings) ----------------
     patterns = {
         "Account Number": r"\b(\d{10})\b",
         "Customer Name": r"(Mr\.?\s+[A-Za-z ]+)",
@@ -81,7 +80,6 @@ def extract_bill_details(pdf_path):
         if m:
             bill_data[k] = m.group(1).strip()
 
-    # ---------------- Handle dates ----------------
     raw_dates = re.findall(r"\b(?:\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})\b", text)
     normalized_dates = []
     for d in raw_dates:
@@ -98,12 +96,10 @@ def extract_bill_details(pdf_path):
         bill_data["Bill Date"] = normalized_dates[0]
         bill_data["Due Date"] = normalized_dates[1]
 
-    # ---------------- Contract Demand ----------------
     cd = re.findall(r"\b\d+\.\d+\s*KVA\b", text)
     if cd:
         bill_data["Contract Demand"] = cd  # keep as string list
 
-    # ---------------- Consumption Details ----------------
     m = re.search(r"(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+\d+\.\d+\s+(\d+\.\d+)\s*KWH", text)
     if m:
         bill_data["Consumption Details"] = {
@@ -112,7 +108,6 @@ def extract_bill_details(pdf_path):
             "Units Billed": Decimal(m.group(3))
         }
 
-    # ---------------- Slabs ----------------
     slabs = re.findall(r"(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+Slab", text)
     if slabs:
         bill_data["Slab Details"] = [
@@ -120,7 +115,6 @@ def extract_bill_details(pdf_path):
             for u, r, a in slabs
         ]
 
-    # ---------------- Charges ----------------
     charges = {}
     simple_patterns = {
         "Fixed Charges": r"Fixed Charges\s*Rs\.?\s*([\d,]+\.\d+)",
@@ -162,7 +156,6 @@ def extract_bill_details(pdf_path):
     return bill_data
 
 
-# ---------------- Database ----------------
 conn = mysql.connector.connect(
     host=st.secrets["database"]["host"],
     user=st.secrets["database"]["user"],
@@ -172,7 +165,6 @@ conn = mysql.connector.connect(
 )
 cursor = conn.cursor(dictionary=True)
 
-# ---------------- Gmail API ----------------
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 CREDENTIALS_FILE = "credentials.json"
 TOKEN_FILE = "token.pkl"
@@ -194,11 +186,9 @@ def get_credentials():
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            # auto refresh
             from google.auth.transport.requests import Request
             creds.refresh(Request())
         else:
-            # run OAuth flow (force offline + consent to get refresh_token)
             flow = InstalledAppFlow.from_client_config(
                 st.secrets["google_credentials"], SCOPES
             )
@@ -207,13 +197,11 @@ def get_credentials():
                 access_type="offline",
                 prompt="consent"
             )
-        # Save creds
         with open(TOKEN_FILE, "wb") as token:
             pickle.dump(creds, token)
     return creds
 
 def save_bill_to_mysql(bill_data, email):
-    # TODO: Insert parsed bill data into your MySQL DB
     cursor.execute("SELECT user_id FROM users WHERE email = %s", (email,))
     row = cursor.fetchone()
     if row:
@@ -224,7 +212,6 @@ def save_bill_to_mysql(bill_data, email):
     bill_number = bill_data.get('Bill Number')
     bill_date = bill_data.get('Bill Date')
 
-    # check if bill already exists for this user
     cursor.execute("""
         SELECT bill_id FROM bills
         WHERE user_id=%s AND bill_number=%s AND bill_date=%s
@@ -289,7 +276,7 @@ def save_bill_to_mysql(bill_data, email):
             VALUES (%s, %s, %s, %s, %s)
         ''', (
             bill_id,
-            i%4+1,                # slab number/order
+            i%4+1,
             slab['Units'],
             slab['Rate'],
             slab['Amount']
@@ -302,8 +289,8 @@ def save_bill_to_mysql(bill_data, email):
             VALUES (%s, %s, %s)
         ''', (
             bill_id,
-            name,        # e.g., "Fixed Charges"
-            value        # e.g., Decimal('439.40')
+            name,
+            value     
         ))
     conn.commit()
 
@@ -331,7 +318,6 @@ def download_and_process_invoices(service, email, limit=500):
                 ).execute()
                 data = base64.urlsafe_b64decode(att["data"].encode("UTF-8"))
 
-                # process PDF in memory
                 with open("temp.pdf", "wb") as tmp:
                     tmp.write(data)
                 bill_data = extract_bill_details("temp.pdf")
@@ -344,7 +330,6 @@ def download_and_process_invoices(service, email, limit=500):
         return "⚠️ No PDF invoices processed."
     return f"✅ Processed and saved {processed_count} invoices."
 
-# ---------------- Streamlit App ----------------
 if st.session_state.step == 0:
     st.markdown("""
         <style>
@@ -477,11 +462,8 @@ if st.session_state.step == 0:
     logo_path = os.path.join("downloads", "Logo.png")
     preview_path = os.path.join('downloads','Dashboard.png')
     try:
-        # 2. Encode the image to a base64 string
         logo_base64 = get_image_as_base64(logo_path)
-        
-        # 3. Create the correct src string for embedding
-        logo_src = f"data:image/png;base64,{logo_base64}"
+                logo_src = f"data:image/png;base64,{logo_base64}"
     except FileNotFoundError:
         st.error(f"Logo file not found. Please ensure it is located at: {logo_path}")
     st.markdown(f"""<div class="hero-section"><div style="text-align: center; margin-bottom: 2rem;"><img src="{logo_src}"height=160 alt="Watt Wise Logo"  style="filter: drop-shadow(0 0 25px rgba(251, 188, 4, 0.6));"><h1 style="font-size: 4.5rem; margin-top: 1rem;">Watt Wise</h1></div><p class="subtitle">From confusing PDFs to crystal-clear insights. Finally, understand your electricity usage and take control of your spending in Greater Noida.</p></div>""",unsafe_allow_html=True)
@@ -617,7 +599,6 @@ if st.session_state.step == 0:
 # ------------------ STEP 1: DASHBOARD ------------------
 if st.session_state.step == 1:
     st.markdown("<h1 style='text-align: center;'>Electricity Bill Analysis Dashboard</h1>", unsafe_allow_html=True)
-    # Month order
     month_order = ["JAN","FEB","MAR","APR","MAY","JUN",
                 "JUL","AUG","SEP","OCT","NOV","DEC"]
     full_to_short = {
@@ -625,7 +606,6 @@ if st.session_state.step == 1:
         "May":"MAY","June":"JUN","July":"JUL","August":"AUG",
         "September":"SEP","October":"OCT","November":"NOV","December":"DEC"
     }
-    # Mapping MM -> Name
     month_map = {
         1: "JAN", 2: "FEB", 3: "MAR", 4: "APR",
         5: "MAY", 6: "JUN", 7: "JUL", 8: "AUG",
@@ -636,7 +616,6 @@ if st.session_state.step == 1:
         st.error("User not logged in!")
         st.stop()
 
-    # Fetch user_id
     user_id = ''
     cursor.execute("SELECT user_id FROM users WHERE email = %s", (email,))
     row = cursor.fetchone()
@@ -646,7 +625,6 @@ if st.session_state.step == 1:
         st.error("User not found!")
         st.stop()
 
-    # Fetch bills
     cursor.execute("SELECT bill_date as Date,bill_amount as Amount FROM bills WHERE user_id = %s", (user_id,))
     bills = cursor.fetchall()
 
@@ -675,29 +653,22 @@ if st.session_state.step == 1:
 
     bill_comp = cursor.fetchall()
 
-    # ✅ Add column names to DataFrame
     df = pd.DataFrame(bill_comp, columns=["user_id", "Amount", "Year", "MonthNum"])
 
-    # ✅ Month map (integers → short names)
     month_map = {
         1: "JAN", 2: "FEB", 3: "MAR", 4: "APR",
         5: "MAY", 6: "JUN", 7: "JUL", 8: "AUG",
         9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC"
     }
-
-    # ✅ Map MonthNum to Month correctly
     df["Month"] = df["MonthNum"].map(month_map)
     df["Month"] = pd.Categorical(df["Month"], categories=month_order, ordered=True)
 
-    # ✅ Year selector (descending order)
     years = sorted(df["Year"].unique().astype(int), reverse=True)
     years = [str(y) for y in years]
     selected_year = st.selectbox("Select Year", years, key="year_selector_1")
 
-    # ✅ Convert selected_year back to int for filtering
     df_filtered = df[df["Year"] == int(selected_year)].sort_values("Month")
 
-    # ✅ Plot
     fig = px.bar(
         df_filtered,
         x="Month", y="Amount",
@@ -726,7 +697,6 @@ if st.session_state.step == 1:
     df["Month"] = pd.Categorical(df["Month"], categories=month_order, ordered=True)
     df = df.sort_values(["Year","Month"])
     
-    # Plot
     fig = px.line(
         df,
         x="Month", y="Units Consumed",
@@ -752,19 +722,15 @@ if st.session_state.step == 1:
     df = pd.DataFrame(charges)
     df["Charge Value"] = pd.to_numeric(df["Charge Value"], errors="coerce")
     df.loc[df["Charges Name"].isin(["Rebate", "Regulatory Discount"]), "Charge Value"] *= -1
-    # Proper month order
     month_order = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"]
     df["Month"] = pd.Categorical(df["Month"], categories=month_order, ordered=True)
 
-    # --- Year selector ---
     years = sorted(df["Year"].unique())
     selected_year = st.selectbox("Select Year", years, index=len(years)-1)
 
-    # Filter data for the selected year
     df_year = df[df["Year"] == selected_year]
 
-    # Plot
     fig = px.bar(
         df_year,
         x="Month",
@@ -782,7 +748,6 @@ if st.session_state.step == 1:
     )
 
     st.plotly_chart(fig, use_container_width=True)
-        # Logout option
     if st.button("Logout"):
         st.session_state.creds = None
         st.session_state.email = None
